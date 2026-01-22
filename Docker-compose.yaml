@@ -1,0 +1,66 @@
+version: "3.8"
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2025-latest
+    container_name: sqlpreview
+    hostname: sqlpreview
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: MyStr0ng!Pass#2024
+      MSSQL_PID: Evaluation
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    networks:
+      - library-network
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "MyStr0ng!Pass#2024" -Q "SELECT 1" -C || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+
+  api:
+    image: library-management:latest
+    container_name: library-api
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__DefaultConnection: >
+        Server=sqlpreview;
+        Database=libraryDb;
+        User Id=sa;
+        Password=MyStr0ng!Pass#2024;
+        TrustServerCertificate=True;
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    networks:
+      - library-network
+
+  migrations:
+    image: library-management:latest
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    working_dir: /src
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for SQL Server to be ready..."
+        sleep 10
+        echo "Running migrations..."
+        dotnet ef database update --startup-project /src/LibraryManagement.csproj --connection "Server=sqlpreview;Database=libraryDb;User Id=sa;Password=MyStr0ng!Pass#2024;TrustServerCertificate=True;"
+    networks:
+      - library-network
+    restart: "no"
+
+networks:
+  library-network:
+    driver: bridge
+
+volumes:
+  sqlserver-data:
